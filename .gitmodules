@@ -1,0 +1,3 @@
+[submodule "argumentum"]
+	path = argumentum
+	url = https://github.com/mmahnic/argumentum.git
