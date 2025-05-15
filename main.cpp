@@ -187,7 +187,7 @@ int main(int argc, char* argv[])
         cout<<"m vectors normalised by "<<normMVal<<endl;
     }
     if (savefilename != ""){
-        sys.save("savefilename");
+        sys.save(savefilename);
         cout<<"system saved to: "<<savefilename<<endl;
     }
     ofstream f(output.c_str());
