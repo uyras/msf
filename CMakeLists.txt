@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.13)
 
 project(MSF)
 
@@ -9,9 +9,7 @@ set (ARGUMENTUM_BUILD_STATIC_LIBS ON)
 find_package(OpenMP REQUIRED)
 
 add_subdirectory(argumentum)
-add_subdirectory(partsEngine)
+include_directories("argumentum/include")
 
-include_directories("partsEngine" "argumentum/include")
-
-add_executable(msf main.cpp)
-target_link_libraries(msf partsEngine OpenMP::OpenMP_CXX Argumentum::argumentum)
+add_executable(msf main.cpp MagneticSystem.cpp)
+target_link_libraries(msf OpenMP::OpenMP_CXX Argumentum::argumentum)

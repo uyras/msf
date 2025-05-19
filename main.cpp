@@ -1,5 +1,3 @@
-#include "Vect.h"
-#include "PartArray.h"
 #include <fstream>
 #include <sstream>
 #include <omp.h>
@@ -8,7 +6,10 @@
 #include <argumentum/argparse.h>
 #include <vector>
 #include <cmath>
-#include "ProgressBar.h"
+#include <chrono>
+#include "progressbar.hpp"
+#include "misc.h"
+#include "MagneticSystem.h"
 
 using namespace std;
 using namespace argumentum;
@@ -21,114 +22,29 @@ static double angle;
 static double normPosVal;
 static double normMVal;
 
-/**
- * @brief Rotate a point counterclockwise by a given angle around a given origin.
-    The angle should be given in degrees.
- * 
- * @param sys system
- * @param angleDegree 
- * @param origin 
- */
-void rotate(PartArray &sys,double angleDegree, Vect point = {0,0,0}){
-    double angleRadians = angleDegree * (M_PI / 180.);
-    double anSin = sin(angleRadians);
-    double anCos = cos(angleRadians);
-
-    double tmpx, tmpy;
-    for (auto & p : sys.parts){
-        tmpx = /*p->m.x + */anCos * (point.x - p->m.x) - anSin * (point.y - p->m.y);
-        tmpy = /*p->m.y + */anSin * (point.x - p->m.x) + anCos * (point.y - p->m.y);
-        p->m.x = tmpx;
-        p->m.y = tmpy;
-
-        tmpx = /*p->pos.x + */anCos * (point.x - p->pos.x) - anSin * (point.y - p->pos.y);
-        tmpy = /*p->pos.y + */anSin * (point.x - p->pos.x) + anCos * (point.y - p->pos.y);
-        p->pos.x = tmpx;
-        p->pos.y = tmpy;
-    }
-    return;
-}
-
-double normPos(PartArray &sys,double val){
-    if (val == 0){
-        bool fst = true;
-        for (auto p1 : sys.parts){
-            for (auto p2 : sys.parts){
-                if (p1 != p2){
-                    double sp = p1->pos.space(p2->pos);
-                    if (fst){
-                        val = sp;
-                        fst = false;
-                    } else {
-                        if (val>sp)
-                            val = sp;
-                    }
-                }
-            }
-        }
-    }
-
-    for (auto & p : sys.parts){
-        p->pos.x /= val;
-        p->pos.y /= val;
-    }
-    return val;
-}
-
-double normM(PartArray &sys,double val){
-    if (val == 0){
-        bool fst = true;
-        for (auto p : sys.parts){
-            double sp = p->m.length();
-            if (fst){
-                val = sp;
-                fst = false;
-            } else {
-                if (val>sp)
-                    val = sp;
-            }
-        }
-    }
-
-    for (auto & p : sys.parts){
-        p->m.x /= val;
-        p->m.y /= val;
-    }
-    return val;
-}
+std::string filename,output,savefilename;
+bool enablePG = false; // флаг для включения прогресс-бара
 
 // функция возвращает вектор S перпендикулярный вектору Q
 inline Vect recip(Vect & qNorm, Vect & s){
-    return s - (qNorm * s.scalar(qNorm));
-}
-
-inline double scalar(const Vect & a, const Vect & b) {
-	return (a.x * b.x) + (a.y * b.y);
-}
-
-PartArray readTxt(string filename){
-    ifstream f(filename);
-    string buf;
-    PartArray sys;
-    while (getline(f,buf))
-    {
-        istringstream ss(buf);
-        Part *p = new Part();
-        ss>>(p->pos.x);
-        ss>>(p->pos.y);
-        ss>>(p->m.x);
-        ss>>(p->m.y);
-        sys.insert(p);
-    }
-    
-    f.close();
-    return sys;
+    double sc = scalar(s,qNorm);
+    return {s.x - qNorm.x * sc, s.y - qNorm.y * sc};
 }
 
 int main(int argc, char* argv[])
 {
+    int num_threads = 0;
+    int max_threads = 0;
+    auto start = std::chrono::high_resolution_clock::now();
 
-    std::string filename,output,savefilename;
+    #pragma omp parallel
+    {
+        #pragma omp single
+        {
+            num_threads = omp_get_num_threads();
+            max_threads = omp_get_max_threads();
+        }
+    }
     
     auto parser = argumentum::argument_parser{};
     auto params = parser.params();
@@ -154,6 +70,8 @@ int main(int argc, char* argv[])
         .help("Divide (normalise) all space soordinates by this value. If set 0, use the minimal distance between spins as a value.");
     params.add_parameter(normMVal,"-m","--normaliseMoments").absent(1).nargs(1)
         .help("Divide (normalise) all M vector by this value. If set 0, use minimal length of M vector as a value.");
+    params.add_parameter(enablePG,"-b","--bar")
+        .help("Enables progress bar. Disabled by default.");
 
     auto res = parser.parse_args( argc, argv, 1 );
 
@@ -164,93 +82,105 @@ int main(int argc, char* argv[])
         output = filename + ".dat";
     }
 
-    const int totsteps = (qmax-qmin)/qstep + 1;
+    const size_t rowsCount = (qmax-qmin)/qstep + 1;
+    const size_t pixelsCount = rowsCount*rowsCount;
 
-    PartArray sys;
-    if (filename.rfind(".txt") == string::npos)
-        sys.load(filename);
-    else
-        sys = readTxt(filename);
-    cout<<"file: "<<filename<<" size: "<<sys.size()<<endl;
+    MagneticSystem sys(filename);
+    cout << "OpenMP threads: " << num_threads <<"; max: "<< max_threads << endl;
+    cout<<"file: "<<filename<<" size: "<<sys.N()<<endl;
     cout<<"output: "<<output<<endl;
     
     if (angle!=0){
-        rotate(sys,angle);
+        sys.rotate(angle);
         cout<<"rotation by "<<angle<<" degrees applied"<<endl;
     }
     if (normPosVal != 1){
-        normPosVal = normPos(sys,normPosVal);
+        normPosVal = sys.normPos(normPosVal);
         cout<<"positions normalised by "<<normPosVal<<endl;
     }
     if (normMVal != 1){
-        normMVal = normM(sys,normMVal);
+        normMVal = sys.normM(normMVal);
         cout<<"m vectors normalised by "<<normMVal<<endl;
     }
     if (savefilename != ""){
         sys.save(savefilename);
         cout<<"system saved to: "<<savefilename<<endl;
     }
-    ofstream f(output.c_str());
-    cout<<"file contains "<<totsteps*totsteps<<" lines ("<<totsteps<<"*"<<totsteps<<")"<<endl;
 
-    struct saveElement
-    {
-        double qx;
-        double qy;
-        double re;
-        double im;
-    };
+    cout<<"file contains "<<pixelsCount<<" lines ("<<rowsCount<<"*"<<rowsCount<<")"<<endl;
 
-    vector <saveElement> saveArray(totsteps*totsteps);
+    const size_t N = sys.N();
 
-    vector <Vect> distances(sys.size()*sys.size());
-    for(auto &parta : sys.parts){
-        for(auto &partb : sys.parts){
-            distances[parta->Id() * sys.size() + partb->Id()] = parta->pos - partb->pos;
+    vector <saveElement> saveArray(pixelsCount);
+
+    vector <Vect> distances(N*N);
+    for(std::size_t i = 0; i < N; ++i){
+        for(std::size_t j = 0; j < N; ++j){
+            distances[i * N + j] = {sys.parts[i].p.x - sys.parts[j].p.x, sys.parts[i].p.y - sys.parts[j].p.y};
         }
     }
 
-    ProgressBar pg;
-    pg.start(totsteps*totsteps);
+    progressbar *pg;
+    if (enablePG)
+        pg = new progressbar(pixelsCount, enablePG);
     
 
     #pragma omp parallel for
-    for (int i=0; i<totsteps*totsteps; i++){
-        pg.update(i+1);
-        int row = i / totsteps;
-        int col = i % totsteps;
+    for (int i=0; i<pixelsCount; i++){
+        #pragma omp critical
+            pg->update();
+        
+        int row = i / rowsCount;
+        int col = i % rowsCount;
         Vect r_temp;
-        Vect q( qmin + row*qstep, qmin + col*qstep, 0);
+        Vect q {qmin + row*qstep, qmin + col*qstep};
         if (q.x == 0. && q.y == 0.){
             saveArray[i] = {0,0,0,0};
             continue;
         } 
-        Vect qNorm = q.normalize();
+        Vect qNorm = normalise(q);
 
-        vector <Vect> recipArr(sys.size());
-        for(auto &part : sys.parts){
-            recipArr[part->Id()] = recip(qNorm,part->m);
+        vector <Vect> recipArr(N);
+        for (int k=0; k<N; k++){
+            recipArr[k] = recip(qNorm,sys.parts[k].m);
         }
 
         saveArray[i] = {q.x,q.y,0,0};
         double fourierRoot;
-        for(auto &parta : sys.parts){
-            for(auto &partb : sys.parts){
-                fourierRoot = scalar(recipArr[parta->Id()],recipArr[partb->Id()]);
-                saveArray[i].im += fourierRoot * sin(scalar( q, distances[parta->Id() * sys.size() + partb->Id()] ));
-                saveArray[i].re += fourierRoot * cos(scalar( q, distances[parta->Id() * sys.size() + partb->Id()] ));
+        for(size_t k=0; k<N; k++){
+            for(size_t m=0; m<N; m++){
+                fourierRoot = scalar(recipArr[k],recipArr[m]);
+                saveArray[i].im += fourierRoot * sin(scalar( q, distances[k * N + m] ));
+                saveArray[i].re += fourierRoot * cos(scalar( q, distances[k * N + m] ));
             }
         }
-        saveArray[i].im /= sys.size();
-        saveArray[i].re /= sys.size();
+        saveArray[i].im /= N;
+        saveArray[i].re /= N;
     }
 
+    auto end = std::chrono::high_resolution_clock::now();
+    // Вычисляем длительность
+    auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+    std::cout << endl << "Time: " << duration.count() << " seconds" << std::endl;
+
+    ofstream f(output.c_str());
+
+    f<<"# ";
+    for (int i=0; i<argc; i++){
+        f<<argv[i]<<" ";
+    }
+    f<<endl;
+
+    f<< "# Time: " << duration.count() << "s.; "<<num_threads <<" threads of "<< max_threads << std::endl;
+    
     f<<"#legend:"<<endl<<"#N\tqx\tqy\tre\tim"<<endl;
-    for (int i=0; i<totsteps*totsteps; i++){
+    for (int i=0; i<pixelsCount; i++){
         f<<i<<"\t"<<saveArray[i].qx<<"\t"<<saveArray[i].qy<<"\t"<<saveArray[i].re<<"\t"<<saveArray[i].im<<endl;
     }
 
     f.close();
+
+    delete pg;
 
     return 0;
 }
