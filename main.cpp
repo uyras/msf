@@ -24,6 +24,7 @@ static double normMVal;
 
 std::string filename,output,savefilename;
 bool enablePG = false; // флаг для включения прогресс-бара
+bool simpleFile = false; // сохранять в упрощенном формате файла
 
 // функция возвращает вектор S перпендикулярный вектору Q
 inline Vect recip(Vect & qNorm, Vect & s){
@@ -53,16 +54,18 @@ int main(int argc, char* argv[])
         .description("Program to calculate the magnetic structure factor");
     params.add_parameter(filename,"-f","--filename").nargs(1).required().metavar("FILE.mfsys")
         .help("Path to text file with structure of the system. \
-            Format is the mfsys file. Or txt file is supported.");
+            Format is the mfsys file. txt or dat files are also is supported.");
     params.add_parameter(output,"-o","--output").absent("").nargs(1).metavar("FILE.txt")
         .help("New file where to save the result. By default it is the old file with '.dat' extention.");
+    params.add_parameter(simpleFile,"","--simple")
+        .help("Save only Real part as 2D matrix to the file. Needed to reduce the resulting file size. This file further may be directly readed by np.loadtxt() and plotted by plt.imshow()");
     params.add_parameter(savefilename,"-s","--save").absent("").nargs(1).metavar("FILE.mfsys")
         .help("If set, save scaled and rotated system to .mfsys file.");
-    params.add_parameter(qmin,"","--qmin").nargs(1).absent(-5)
+    params.add_parameter(qmin,"","--qmin").nargs(1)
         .help("q minimal value");
-    params.add_parameter(qmax,"","--qmax").nargs(1).absent(5)
+    params.add_parameter(qmax,"","--qmax").nargs(1)
         .help("q maximal value");
-    params.add_parameter(qstep,"","--qstep").nargs(1).absent(0.1)
+    params.add_parameter(qstep,"","--qstep").nargs(1)
         .help("size of pixel (dQ)");
     params.add_parameter(angle,"-r","--rotate").absent(0).nargs(1)
         .help("Define the angle in degrees if needed to rotate the system");
@@ -127,13 +130,15 @@ int main(int argc, char* argv[])
 
     #pragma omp parallel for
     for (int i=0; i<pixelsCount; i++){
-        #pragma omp critical
-            pg->update();
+        if (enablePG){
+            #pragma omp critical
+                pg->update();
+        }
         
         int row = i / rowsCount;
         int col = i % rowsCount;
         Vect r_temp;
-        Vect q {qmin + row*qstep, qmin + col*qstep};
+        Vect q {qmin + col*qstep, qmin + row*qstep};
         if (q.x == 0. && q.y == 0.){
             saveArray[i] = {0,0,0,0};
             continue;
@@ -160,8 +165,8 @@ int main(int argc, char* argv[])
 
     auto end = std::chrono::high_resolution_clock::now();
     // Вычисляем длительность
-    auto duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
-    std::cout << endl << "Time: " << duration.count() << " seconds" << std::endl;
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+    std::cout << endl << "Time: " << duration.count()/1000. << " seconds" << std::endl;
 
     ofstream f(output.c_str());
 
@@ -171,16 +176,24 @@ int main(int argc, char* argv[])
     }
     f<<endl;
 
-    f<< "# Time: " << duration.count() << "s.; "<<num_threads <<" threads of "<< max_threads << std::endl;
+    f<< "# Time: " << duration.count()/1000. << "s.; "<<num_threads <<" threads of "<< max_threads << std::endl;
     
-    f<<"#legend:"<<endl<<"#N\tqx\tqy\tre\tim"<<endl;
-    for (int i=0; i<pixelsCount; i++){
-        f<<i<<"\t"<<saveArray[i].qx<<"\t"<<saveArray[i].qy<<"\t"<<saveArray[i].re<<"\t"<<saveArray[i].im<<endl;
+    if (simpleFile){
+        for (int i=0; i<pixelsCount; i++){
+            if (i>0 && i%rowsCount==0)
+                f<<endl;
+            f<<saveArray[i].re<<"\t";
+        }
+    } else {
+        f<<"#legend:"<<endl<<"#N\tqx\tqy\tre\tim"<<endl;
+        for (int i=0; i<pixelsCount; i++){
+            f<<i<<"\t"<<saveArray[i].qx<<"\t"<<saveArray[i].qy<<"\t"<<saveArray[i].re<<"\t"<<saveArray[i].im<<endl;
+        }
     }
 
     f.close();
-
-    delete pg;
+    if (enablePG)
+        delete pg;
 
     return 0;
 }
