@@ -13,9 +13,11 @@ Magnetic structure factor calculator
 ## Мат. модель
 
 MSF is calculated by analogy with [this paper](https://www.science.org/doi/10.1126/sciadv.aav6380) and has the same form as in neutron scattering experiments:
+
 $$
   I(\vec{q}) = \frac{1}{N} \sum^N_{i=1} \sum^N_{j=1} \vec{S}_i^\perp \cdot \vec{S}_j^\perp \exp (i \vec{q} \cdot \vec{r}_{i,j}),
 $$
+
 where $\vec{S}_i^\perp = \vec{S}_i - (\hat{q} \cdot \vec{S}_i ) \hat{q}$ is the component of the spin vector of each island, $\vec{S}_i$, perpendicular to the reciprocal space vector $\vec{q}$, and $\hat{q} = \vec{q} / |\vec{q}|$.
 
 Функция представлена в комплексном пространстве. При верно проведенных вычислениях значение имеет только действительная часть. Мнимая часть решения при верном решении должна быть равна 0.
@@ -152,4 +154,40 @@ plt.xlabel("$q_x$")
 plt.ylabel("$q_y$")
 plt.imshow(dat,cmap='jet',extent=[qmin,qmax,qmin,qmax],origin='lower')
 cbr = plt.colorbar(pad=0)
+```
+
+## Преобразование из длинного формата в короткий
+
+Код для преобразования длинного формата вывода в короткий. 
+В новом файле сохраняются все комментарии из старого.
+Лежит в файле [test/convert_long_short.py](test/convert_long_short.py).
+
+```python
+#!/usr/bin/env python3
+
+import numpy as np
+import sys
+
+if len(sys.argv) != 3:
+    print(f"Использование: {sys.argv[0]} <input_file> <output_file>")
+    sys.exit(1)
+
+input_file = sys.argv[1]
+output_file = sys.argv[2]
+
+def sq(arr):
+    return arr.reshape((-1,int(np.sqrt(arr.shape[0]))))
+
+pre = "this file is translated from long to short format\n"
+with open(input_file) as f:
+    for line in f:
+        if line[0]=="#":
+            pre += line[1:]
+        else:
+            break
+
+pre = pre.strip()
+dat = np.loadtxt(input_file)
+rea = sq(dat[:,3])
+np.savetxt(output_file,rea,header=pre,fmt='%.8g')
 ```
