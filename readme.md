@@ -14,9 +14,9 @@ Magnetic structure factor calculator
 
 MSF is calculated by analogy with [this paper](https://www.science.org/doi/10.1126/sciadv.aav6380) and has the same form as in neutron scattering experiments:
 
-$$
-  I(\vec{q}) = \frac{1}{N} \sum^N_{i=1} \sum^N_{j=1} \vec{S}_i^\perp \cdot \vec{S}_j^\perp \exp (i \vec{q} \cdot \vec{r}_{i,j}),
-$$
+```math
+I(\vec{q}) = \frac{1}{N} \sum^N_{i=1} \sum^N_{j=1} \vec{S}_i^\perp \cdot \vec{S}_{j}^\perp \exp (i \vec{q} \cdot \vec{r}_{i,j}),
+```
 
 where $\vec{S}_i^\perp = \vec{S}_i - (\hat{q} \cdot \vec{S}_i ) \hat{q}$ is the component of the spin vector of each island, $\vec{S}_i$, perpendicular to the reciprocal space vector $\vec{q}$, and $\hat{q} = \vec{q} / |\vec{q}|$.
 
